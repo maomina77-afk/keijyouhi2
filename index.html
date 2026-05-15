@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>支払い管理システム 11.0 (リスト開閉対応)</title>
+<title>支払い管理システム 11.1 (ダイアログ修正版)</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode"></script>
 <style>
@@ -13,7 +13,6 @@
   #topInfo { background: #333; color: white; padding: 25px; border-radius: 20px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
   #totalAmount, #clock { font-size: 55px; }
 
-  /* 検索エリアの75%:25%レイアウト */
   .search-row { display: flex; gap: 10px; align-items: flex-end; }
   #kanaSearch { width: 75%; }
   #listToggleBtn { width: 25%; background: #6c757d; color: white; white-space: nowrap; }
@@ -36,19 +35,14 @@
   #statsArea th { background: #eee; font-size: 36px; }
   .stat-all { background: #e9ecef; font-weight: bold; }
 
-  /* 名簿リスト：初期は非表示に設定 */
-  #candidateList { 
-    border: 4px solid #333; border-radius: 20px; 
-    max-height: 700px; overflow-y: auto; background: #fff; 
-    margin-top: 15px; 
-    display: none; /* 初期状態で隠す */
-  }
+  #candidateList { border: 4px solid #333; border-radius: 20px; max-height: 700px; overflow-y: auto; background: #fff; margin-top: 15px; display: none; }
   .list-item { padding: 5px 25px; border-bottom: 2px solid #eee; display: flex; justify-content: space-between; align-items: center; gap: 20px; }
   .item-name { font-size: 55px; font-weight: bold; flex: 1; line-height: 1.1; }
   .paid { background: #d4edda; }
   
-  #dialogOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 100; }
-  #dialogBox { width: 90%; padding: 40px; border-radius: 30px; text-align: center; border: 5px solid #333; }
+  /* ダイアログ修正：z-indexを高く設定 */
+  #dialogOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 9999; }
+  #dialogBox { width: 90%; padding: 40px; border-radius: 30px; text-align: center; border: 5px solid #333; background: white; }
   #dangerZone { margin-top: 80px; padding: 40px; border-top: 5px dashed #ccc; }
 </style>
 </head>
@@ -66,7 +60,6 @@
     <input type="text" id="kanaSearch" placeholder="名前・ふりがな検索" oninput="updateList()">
     <button id="listToggleBtn" onclick="toggleList()">リスト表示</button>
   </div>
-  
   <div class="row-group">
     <select id="groupSearch" onchange="updateList()"><option value="">全組表示</option></select>
     <select id="statusSearch" onchange="updateList()">
@@ -81,17 +74,15 @@
 <h3>スキャン</h3>
 <div class="scanner-container">
   <div class="scanner-btns">
-    <button id="startBtn" onclick="startScanner()">起動</button>
-    <button class="btn-stop" id="stopBtn" onclick="stopScanner()">停止</button>
+    <button onclick="startScanner()">起動</button>
+    <button class="btn-stop" onclick="stopScanner()">停止</button>
   </div>
   <div id="reader"></div>
 </div>
 
 <table id="statsArea">
   <thead>
-    <tr>
-      <th>区分</th><th>総数</th><th>払済</th><th>未納</th><th>未納率</th>
-    </tr>
+    <tr><th>区分</th><th>総数</th><th>払済</th><th>未納</th><th>未納率</th></tr>
   </thead>
   <tbody id="statsBody"></tbody>
 </table>
@@ -105,12 +96,13 @@
   <button class="btn-excel" onclick="exportRoster()">名簿出力</button>
 </div>
 
+<!-- ダイアログ：onclickを確実に修正 -->
 <div id="dialogOverlay">
   <div id="dialogBox">
-    <div id="dialogMessage" style="font-size: 55px; margin-bottom: 40px; white-space: pre-wrap; font-weight: bold;"></div>
+    <div id="dialogMessage" style="font-size: 55px; margin-bottom: 40px; white-space: pre-wrap; font-weight: bold; color: #000;"></div>
     <div class="row-group">
       <button onclick="dialogClick(false)" style="background:#666; color:white;">いいえ</button>
-      <button onclick="dialogConfirmBtn" id="dialogConfirmBtn">はい</button>
+      <button onclick="dialogClick(true)" id="dialogConfirmBtn" style="color:white;">はい</button>
     </div>
   </div>
 </div>
@@ -131,7 +123,6 @@ function updateClock() {
 }
 setInterval(updateClock, 1000);
 
-// リスト表示・非表示の切り替え機能
 function toggleList() {
   const list = document.getElementById('candidateList');
   const btn = document.getElementById('listToggleBtn');
@@ -185,6 +176,7 @@ function saveAndRefresh() {
 
 function calculateStats() {
   const statsBody = document.getElementById('statsBody');
+  if(!statsBody) return;
   statsBody.innerHTML = "";
   const getStats = (list) => {
     const total = list.length;
@@ -193,8 +185,7 @@ function calculateStats() {
     const rate = total > 0 ? ((unpaid / total) * 100).toFixed(1) + "%" : "0%";
     return { total, paid, unpaid, rate };
   };
-  const allS = getStats(roster);
-  appendStatRow(statsBody, "全体", allS, true);
+  appendStatRow(statsBody, "全体", getStats(roster), true);
   const groups = [...new Set(roster.map(r => r["組"]).filter(Boolean))].sort();
   groups.forEach(g => {
     const gList = roster.filter(r => r["組"] === g);
@@ -227,7 +218,7 @@ function updateList() {
       const div = document.createElement('div');
       div.className = 'list-item' + (isPaid ? " paid" : "");
       div.innerHTML = `<div class="item-name">${p["組"] ? p["組"]+'組 ' : ''}${p["氏名"]}</div>
-        <button onclick="confirmPay('${p["ID"]}', 'manual')" style="width:auto; padding:15px 30px; min-width: 180px; font-size: 40px;">${isPaid ? '取消' : '支払'}</button>`;
+        <button onclick="confirmPay('${p["ID"]}', 'manual')" style="width:auto; padding:15px 30px; min-width: 180px; font-size: 40px; background:#007bff; color:white;">${isPaid ? '取消' : '支払'}</button>`;
       container.appendChild(div);
     }
   });
@@ -238,56 +229,46 @@ function updateList() {
 function copyForLine() {
   const now = new Date();
   const dateStr = `${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
-  const total = roster.length;
-  const paid = roster.filter(r => r["支払いステータス"] === "完了").length;
-  const totalAmount = roster.reduce((sum, r) => sum + (r["支払いステータス"] === "完了" ? Number(r["金額"] || 0) : 0), 0);
+  const paidList = roster.filter(r => r["支払いステータス"] === "完了");
+  const totalAmount = paidList.reduce((sum, r) => sum + Number(r["金額"] || 0), 0);
   
-  let text = `【支払い状況報告】\n作成日時: ${dateStr}\n--------------------\n`;
-  text += `■全体状況\n・回収金額: ${totalAmount.toLocaleString()}円\n・完了人数: ${paid}名 / ${total}名\n\n`;
-  text += `■組別(払済/総数)\n`;
+  let text = `【支払い報告】${dateStr}\n回収: ${totalAmount.toLocaleString()}円 (${paidList.length}/${roster.length}名)\n\n`;
   const groups = [...new Set(roster.map(r => r["組"]).filter(Boolean))].sort();
   groups.forEach(g => {
     const gList = roster.filter(r => r["組"] === g);
-    const gPaid = gList.filter(r => r["支払いステータス"] === "完了").length;
-    text += `・${g}組: ${gPaid}/${gList.length}\n`;
+    text += `・${g}組: ${gList.filter(r => r["支払いステータス"] === "完了").length}/${gList.length}\n`;
   });
-  const unpaidList = roster.filter(r => r["支払いステータス"] !== "完了");
-  if (unpaidList.length > 0) {
-    text += `\n■未納者リスト\n`;
-    unpaidList.forEach(p => {
-      text += `・${p["組"] ? p["組"]+'組 ' : ''}${p["氏名"]} 様\n`;
-    });
-  } else {
-    text += `\n★全員の支払いが完了しました！`;
+  const unpaid = roster.filter(r => r["支払いステータス"] !== "完了");
+  if (unpaid.length > 0) {
+    text += `\n■未納者\n`;
+    unpaid.forEach(p => text += `・${p["組"] ? p["組"]+'組 ' : ''}${p["氏名"]} 様\n`);
   }
-  navigator.clipboard.writeText(text).then(() => {
-    alert("LINE用のテキストをコピーしました！");
-  });
+  navigator.clipboard.writeText(text).then(() => alert("コピー完了"));
 }
 
 function showDialog(msg, isCancelMode = false) {
+  const overlay = document.getElementById('dialogOverlay');
   const box = document.getElementById('dialogBox');
   const btn = document.getElementById('dialogConfirmBtn');
   box.style.backgroundColor = isCancelMode ? "#fff0f0" : "#f0fff4";
   btn.style.backgroundColor = isCancelMode ? "#dc3545" : "#28a745";
-  btn.style.color = "white";
   document.getElementById('dialogMessage').innerText = msg;
-  document.getElementById('dialogOverlay').style.display = 'flex';
+  overlay.style.display = 'flex';
   return new Promise(res => { dialogResolver = res; });
 }
 
 function dialogClick(val) {
   document.getElementById('dialogOverlay').style.display = 'none';
-  dialogResolver(val);
+  if (dialogResolver) dialogResolver(val);
 }
 
 async function confirmPay(id, type) {
   const p = roster.find(r => String(r["ID"]) === String(id));
-  const isCurrentlyPaid = p["支払いステータス"] === "完了";
-  if (await showDialog(`${p["氏名"]}さん\n${isCurrentlyPaid ? "取消" : "支払"}を確定しますか？`, isCurrentlyPaid)) {
-    if (!isCurrentlyPaid) {
+  const isPaid = p["支払いステータス"] === "完了";
+  if (await showDialog(`${p["氏名"]}さん\n${isPaid ? "取消" : "支払"}を確定しますか？`, isPaid)) {
+    if (!isPaid) {
       p["支払いステータス"] = "完了";
-      p["入力区分"] = type === "manual" ? "手動入力" : "バーコード入力";
+      p["入力区分"] = type === "manual" ? "手動" : "スキャン";
       const now = new Date();
       p["日付"] = now.toLocaleDateString();
       p["時刻"] = now.toTimeString().split(' ')[0];
@@ -300,15 +281,14 @@ async function confirmPay(id, type) {
 }
 
 async function confirmReset() {
-  if (await showDialog("全消去しますか？", true)) { localStorage.clear(); roster = []; location.reload(); }
+  if (await showDialog("全消去しますか？", true)) { localStorage.clear(); location.reload(); }
 }
 
 async function startScanner() {
   localStorage.setItem('scannerActive', 'true');
   if (!html5QrCode) html5QrCode = new Html5Qrcode("reader");
-  const config = { fps: 15, qrbox: { width: 300, height: 200 } };
   try {
-    await html5QrCode.start({ facingMode: "environment" }, config, async (txt) => { await onScanSuccess(txt); });
+    await html5QrCode.start({ facingMode: "environment" }, { fps: 15, qrbox: { width: 300, height: 200 } }, async (txt) => { await onScanSuccess(txt); });
   } catch (err) { console.error(err); }
 }
 
@@ -325,7 +305,7 @@ async function onScanSuccess(code) {
     startScanner(); 
   } else {
     await stopScanner();
-    await showDialog(`未登録ID: ${code}`, true);
+    await showDialog(`未登録: ${code}`, true);
     startScanner();
   }
 }
