@@ -2,548 +2,302 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>支払い確認アプリ</title>
+<title>支払い管理システム 9.0 (完全版)</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode"></script>
 <style>
-  * { box-sizing: border-box; }
-  body {
-    font-family: sans-serif;
-    font-size: 32px;          /* 文字大きめ（約3倍） */
-    padding: 12px;
-    margin: 0;
-    background: #f5f5f5;
+  body { font-family: sans-serif; font-size: 48px; padding: 20px; margin: 0; background: #f0f0f0; }
+  h3 { font-size: 50px; margin: 15px 0; border-left: 10px solid #007bff; padding-left: 20px; }
+  input, select, button { font-size: 48px; padding: 25px; width: 100%; margin-top: 15px; border-radius: 15px; border: 2px solid #ccc; }
+  
+  /* ヘッダー：時計と金額を同じ大きさに */
+  #topInfo { 
+    background: #333; color: white; padding: 25px; border-radius: 20px; 
+    display: flex; justify-content: space-between; align-items: center; font-weight: bold; 
   }
-  input, select, button {
-    font-size: 32px;          /* 入力・ボタンも大きく */
-    padding: 18px;
-    width: 100%;
-    margin-top: 12px;
-  }
-  button {
-    background: #007bff;
-    color: #fff;
-    border: none;
-    border-radius: 12px;
-  }
-  button:active {
-    background: #0056b3;
-  }
-  #topInfo {
-    position: sticky;
-    top: 0;
-    background: #ffffff;
-    padding: 10px;
-    border-bottom: 3px solid #ccc;
-    z-index: 20;
-  }
-  #searchArea {
-    position: sticky;
-    top: 80px;
-    background: #ffffff;
-    padding: 10px;
-    z-index: 15;
-    border-bottom: 1px solid #ddd;
-  }
-  #candidateList {
-    border: 3px solid #ccc;
-    border-radius: 12px;
-    max-height: 360px;
-    overflow-y: auto;
-    margin-top: 10px;
-    background: #fff;
-  }
-  .list-item {
-    padding: 18px;
-    border-bottom: 1px solid #eee;
-  }
-  .paid {
-    background: #e0ffe0;
-  }
-  #reader {
-    width: 100%;
-    max-width: 520px;
-    margin: 16px auto;
-    background: #000;
-  }
-  #scanResult {
-    font-size: 28px;
-    margin-top: 8px;
-  }
-  h2, h3 {
-    margin: 12px 0 6px;
-  }
-  /* カスタムダイアログ */
-  #dialogOverlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.4);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-  }
-  #dialogBox {
-    width: 80%;
-    padding: 24px;
-    border-radius: 16px;
-    color: #fff;
-    text-align: center;
-  }
-  #dialogMessage {
-    margin-bottom: 20px;
-  }
-  #dialogButtons button {
-    width: 45%;
-    margin: 0 2%;
-  }
+  #totalAmount, #clock { font-size: 55px; }
+
+  .row-group { display: flex; gap: 15px; margin-top: 15px; }
+  .row-group > * { flex: 1; margin-top: 0; }
+  button { background: #007bff; color: white; border: none; cursor: pointer; }
+  .btn-stop { background: #dc3545; }
+  .btn-reset { background: #6c757d; font-size: 32px; }
+  .btn-excel { background: #28a745; }
+
+  /* スキャナー配置：左にボタン、右に画像 */
+  .scanner-container { display: flex; gap: 20px; align-items: stretch; margin-top: 20px; }
+  .scanner-btns { display: flex; flex-direction: column; gap: 15px; width: 30%; }
+  .scanner-btns button { flex: 1; margin-top: 0; padding: 10px; }
+  #reader { flex: 1; background: #000; border-radius: 20px; overflow: hidden; min-height: 200px; }
+
+  /* 統計テーブル：文字を大きく、全表示 */
+  #statsArea { margin-top: 30px; width: 100%; border-collapse: collapse; background: #fff; border-radius: 15px; overflow: hidden; font-size: 42px; }
+  #statsArea th, #statsArea td { border: 2px solid #ccc; padding: 20px 10px; text-align: center; }
+  #statsArea th { background: #eee; font-size: 36px; }
+  .stat-all { background: #e9ecef; font-weight: bold; }
+
+  /* リスト：極限まで詰める */
+  #candidateList { border: 4px solid #333; border-radius: 20px; max-height:1600px; overflow-y: auto; background: #fff; margin-top: 15px; }
+  .list-item { padding: 5px 25px; border-bottom: 2px solid #eee; display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+  .item-name { font-size: 55px; font-weight: bold; flex: 1; line-height: 1.1; }
+  .paid { background: #d4edda; }
+  
+  /* ダイアログ */
+  #dialogOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 100; }
+  #dialogBox { width: 90%; padding: 40px; border-radius: 30px; text-align: center; border: 5px solid #333; }
+  #dangerZone { margin-top: 80px; padding: 40px; border-top: 5px dashed #ccc; }
 </style>
 </head>
 
 <body>
+
 <div id="topInfo">
-  合計金額: <span id="totalAmount">0</span> 円　
-  最終更新: <span id="lastUpdate">-</span>
+  <div>合計: <span id="totalAmount">0</span>円</div>
+  <div id="clock">00:00:00</div>
 </div>
 
 <div id="searchArea">
-  <div>名簿ファイル（.xlsx）を選択：</div>
-  <input type="file" id="file" accept=".xlsx">
-  <div id="loadStatus" style="font-size:26px; margin-top:4px;"></div>
-
-  <h3>検索（ふりがな／組／ID／区分）</h3>
-  <input type="text" id="kanaSearch" placeholder="ふりがなで検索">
-  <select id="groupSearch">
-    <option value="">組を指定しない</option>
-  </select>
-  <input type="text" id="idSearch" placeholder="IDで検索">
-  <select id="statusFilter">
-    <option value="all">区分：全員</option>
-    <option value="unpaid">区分：未払者</option>
-    <option value="paid">区分：既払者</option>
-  </select>
-  <button id="filterButton">候補を絞り込む</button>
-
+  <h3>名簿検索</h3>
+  <input type="text" id="kanaSearch" placeholder="名前・ふりがな検索" oninput="updateList()">
+  <div class="row-group">
+    <select id="groupSearch" onchange="updateList()"><option value="">全組表示</option></select>
+    <select id="statusSearch" onchange="updateList()">
+      <option value="all">全員</option>
+      <option value="unpaid">未納</option>
+      <option value="paid">支払い済</option>
+    </select>
+  </div>
   <div id="candidateList"></div>
 </div>
 
-<h3>バーコード読み取り（CODE39）</h3>
-<button id="startScanButton">バーコード読み取り開始</button>
-<div id="reader"></div>
-<p id="scanResult"></p>
-<input type="file" id="barcodeImage" accept="image/*" capture="environment" style="margin-top:20px;">
-<button id="scanImageButton">画像からバーコードを読み取る</button>
+<h3>スキャン</h3>
+<div class="scanner-container">
+  <div class="scanner-btns">
+    <button id="startBtn" onclick="startScanner()">起動</button>
+    <button class="btn-stop" id="stopBtn" onclick="stopScanner()">停止</button>
+  </div>
+  <div id="reader"></div>
+</div>
 
-<h3>ログ・送信</h3>
-<button onclick="exportLog()">支払いログをExcelに書き出し</button><br><br>
-<label>組を選んで一覧送信:</label>
-<select id="groupSend">
-  <option value="">組を選択</option>
-  <option value="__ALL__">全員</option>
-</select>
-<button onclick="sendGroupSummary()">この組の一覧を送信</button>
-<br><br>
-<button onclick="exportRoster()">更新した名簿をExcelに書き出し</button>
+<table id="statsArea">
+  <thead>
+    <tr>
+      <th>区分</th>
+      <th>総数</th>
+      <th>払済</th>
+      <th>未納</th>
+      <th>未納率</th>
+    </tr>
+  </thead>
+  <tbody id="statsBody">
+    <!-- JSで全組分を生成 -->
+  </tbody>
+</table>
 
-<!-- カスタムダイアログ -->
+<div class="row-group" style="margin-top: 40px;">
+  <button class="btn-excel" onclick="exportLogs()">ログ出力</button>
+  <button class="btn-excel" onclick="exportRoster()">名簿出力</button>
+</div>
+
 <div id="dialogOverlay">
   <div id="dialogBox">
-    <div id="dialogMessage"></div>
-    <div id="dialogButtons">
-      <button id="dialogCancel">いいえ</button>
-      <button id="dialogOk">はい</button>
+    <div id="dialogMessage" style="font-size: 55px; margin-bottom: 40px; white-space: pre-wrap; font-weight: bold;"></div>
+    <div class="row-group">
+      <button onclick="dialogClick(false)" style="background:#666; color:white;">いいえ</button>
+      <button onclick="dialogClick(true)" id="dialogConfirmBtn">はい</button>
     </div>
   </div>
 </div>
 
+<div id="dangerZone">
+  <input type="file" id="file" accept=".xlsx">
+  <button class="btn-reset" onclick="confirmReset()" style="margin-top: 30px;">全データ消去リセット</button>
+</div>
+
 <script>
-let roster = [];        // 名簿データ
-let logs = [];          // 支払いログ
-let totalAmount = 0;
+let roster = [];
 let html5QrCode = null;
+let dialogResolver = null;
 
-// localStorage キー
-const STORAGE_KEY_ROSTER = "shiharai_roster";
-const STORAGE_KEY_LOGS = "shiharai_logs";
-const STORAGE_KEY_TOTAL = "shiharai_total";
-const STORAGE_KEY_FILTERS = "shiharai_filters";
-
-// 3桁区切り
-function formatNumber(n) {
-  const num = Number(n || 0);
-  return num.toLocaleString("ja-JP");
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').innerText = now.toLocaleTimeString();
 }
+setInterval(updateClock, 1000);
 
-// カスタムダイアログ
-let dialogResolve = null;
-function showDialog(message, color) {
-  return new Promise((resolve) => {
-    dialogResolve = resolve;
-    const overlay = document.getElementById("dialogOverlay");
-    const box = document.getElementById("dialogBox");
-    const msg = document.getElementById("dialogMessage");
-    msg.textContent = message;
-    box.style.background = color; // 緑 or 赤
-    overlay.style.display = "flex";
-  });
-}
-document.getElementById("dialogCancel").onclick = () => {
-  document.getElementById("dialogOverlay").style.display = "none";
-  if (dialogResolve) dialogResolve(false);
-};
-document.getElementById("dialogOk").onclick = () => {
-  document.getElementById("dialogOverlay").style.display = "none";
-  if (dialogResolve) dialogResolve(true);
+window.onload = () => {
+  const saved = localStorage.getItem('paymentRoster');
+  if (saved) {
+    roster = JSON.parse(saved);
+    rebuildGroupOptions();
+    updateList();
+  }
+  if (localStorage.getItem('scannerActive') === 'true') startScanner();
 };
 
-// 起動時に復元
-window.addEventListener("load", () => {
-  const savedRoster = localStorage.getItem(STORAGE_KEY_ROSTER);
-  const savedLogs = localStorage.getItem(STORAGE_KEY_LOGS);
-  const savedTotal = localStorage.getItem(STORAGE_KEY_TOTAL);
-  const savedFilters = localStorage.getItem(STORAGE_KEY_FILTERS);
-
-  if (savedRoster) {
-    roster = JSON.parse(savedRoster);
-    document.getElementById("loadStatus").innerText =
-      "前回の名簿を復元しました（" + roster.length + "名）";
-  }
-  if (savedLogs) {
-    logs = JSON.parse(savedLogs);
-  }
-  if (savedTotal) {
-    totalAmount = Number(savedTotal);
-  }
-  if (savedFilters) {
-    const f = JSON.parse(savedFilters);
-    document.getElementById("kanaSearch").value = f.kana || "";
-    document.getElementById("idSearch").value = f.id || "";
-    document.getElementById("statusFilter").value = f.status || "all";
-  }
-
-  if (roster.length > 0) {
-    rebuildGroupSelects();
-    updateTopInfo();
-    filterList();
-  }
-});
-
-// 状態保存
-function saveState() {
-  localStorage.setItem(STORAGE_KEY_ROSTER, JSON.stringify(roster));
-  localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(logs));
-  localStorage.setItem(STORAGE_KEY_TOTAL, String(totalAmount));
-  const filters = {
-    kana: document.getElementById("kanaSearch").value.trim(),
-    id: document.getElementById("idSearch").value.trim(),
-    group: document.getElementById("groupSearch").value,
-    status: document.getElementById("statusFilter").value
+document.getElementById('file').addEventListener('change', (e) => {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const workbook = XLSX.read(new Uint8Array(e.target.result), {type: 'array'});
+    roster = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+    rebuildGroupOptions();
+    saveAndRefresh();
   };
-  localStorage.setItem(STORAGE_KEY_FILTERS, JSON.stringify(filters));
-}
-
-// ① Excel 読み込み
-document.getElementById("file").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const data = await file.arrayBuffer();
-  const workbook = XLSX.read(data);
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  roster = XLSX.utils.sheet_to_json(sheet);
-
-  document.getElementById("loadStatus").innerText =
-    "名簿を読み込みました（" + roster.length + "名）";
-
-  logs = [];
-  totalAmount = 0;
-
-  rebuildGroupSelects();
-  updateTopInfo();
-  filterList();
-  saveState();
+  reader.readAsArrayBuffer(e.target.files[0]);
 });
 
-function rebuildGroupSelects() {
-  const groups = [...new Set(roster.map(r => r["組"]))];
-  const groupSearch = document.getElementById("groupSearch");
-  const groupSend = document.getElementById("groupSend");
-
-  const savedFilters = localStorage.getItem(STORAGE_KEY_FILTERS);
-  let savedGroup = "";
-  if (savedFilters) {
-    savedGroup = JSON.parse(savedFilters).group || "";
-  }
-
-  groupSearch.innerHTML = '<option value="">組を指定しない</option>';
-  groupSend.innerHTML = '<option value="">組を選択</option><option value="__ALL__">全員</option>';
-
+function rebuildGroupOptions() {
+  const groupSelect = document.getElementById('groupSearch');
+  const groups = [...new Set(roster.map(r => r["組"]).filter(Boolean))].sort();
+  groupSelect.innerHTML = '<option value="">全組表示</option>';
   groups.forEach(g => {
-    const opt1 = document.createElement("option");
-    opt1.value = g; opt1.textContent = g;
-    groupSearch.appendChild(opt1);
-
-    const opt2 = document.createElement("option");
-    opt2.value = g; opt2.textContent = g;
-    groupSend.appendChild(opt2);
+    const opt = document.createElement('option');
+    opt.value = g; opt.textContent = g + "組";
+    groupSelect.appendChild(opt);
   });
-
-  if (savedGroup) groupSearch.value = savedGroup;
 }
 
-// ② 検索入力＋ボタンで候補を絞る
-document.getElementById("kanaSearch").addEventListener("input", () => { filterList(); saveState(); });
-document.getElementById("idSearch").addEventListener("input", () => { filterList(); saveState(); });
-document.getElementById("groupSearch").addEventListener("change", () => { filterList(); saveState(); });
-document.getElementById("statusFilter").addEventListener("change", () => { filterList(); saveState(); });
-document.getElementById("filterButton").addEventListener("click", () => { filterList(); saveState(); });
-
-function filterList() {
-  const kana = document.getElementById("kanaSearch").value.trim();
-  const group = document.getElementById("groupSearch").value;
-  const id = document.getElementById("idSearch").value.trim();
-  const status = document.getElementById("statusFilter").value;
-  const listDiv = document.getElementById("candidateList");
-  listDiv.innerHTML = "";
-
-  let filtered = roster;
-
-  if (kana) {
-    filtered = filtered.filter(r =>
-      (r["ふりがな"] || "").toString().includes(kana)
-    );
-  }
-  if (group) {
-    filtered = filtered.filter(r => r["組"] == group);
-  }
-  if (id) {
-    filtered = filtered.filter(r =>
-      (r["ID"] || "").toString().includes(id)
-    );
-  }
-  if (status === "unpaid") {
-    filtered = filtered.filter(r => r["支払状況"] !== "済");
-  } else if (status === "paid") {
-    filtered = filtered.filter(r => r["支払状況"] === "済");
-  }
-
-  filtered.forEach((r) => {
-    const div = document.createElement("div");
-    div.className = "list-item" + (r["支払状況"] === "済" ? " paid" : "");
-    div.textContent =
-      `${r["氏名"]}（${r["組"]}） 金額:${r["金額"]} 状況:${r["支払状況"] || "未"}`;
-
-    let pressTimer = null;
-    let longPress = false;
-
-    // 長押し＝支払い or キャンセル（色付きダイアログ）
-    div.addEventListener("touchstart", () => {
-      longPress = false;
-      pressTimer = setTimeout(async () => {
-        longPress = true;
-        if (r["支払状況"] === "済") {
-          const ok = await showDialog(
-            r["氏名"] + " さんの支払い登録をキャンセルしますか？",
-            "#d9534f"  // 赤
-          );
-          if (ok) cancelPaid(r);
-        } else {
-          const ok = await showDialog(
-            r["氏名"] + " さんを支払い済みにしますか？",
-            "#5cb85c"  // 緑
-          );
-          if (ok) markPaid(r, "manual");
-        }
-      }, 800);
-    });
-
-    div.addEventListener("touchend", () => {
-      clearTimeout(pressTimer);
-      // 短押しは何もしない（誤タップ防止）
-    });
-
-    listDiv.appendChild(div);
-  });
-
-  if (filtered.length === 0) {
-    const div = document.createElement("div");
-    div.className = "list-item";
-    div.textContent = "該当なし";
-    listDiv.appendChild(div);
-  }
+function saveAndRefresh() {
+  localStorage.setItem('paymentRoster', JSON.stringify(roster));
+  updateList();
 }
 
-// ③ CODE39 バーコード読み取り（ボタンで開始）
-document.getElementById("startScanButton").addEventListener("click", () => {
-  if (html5QrCode) return;
-  html5QrCode = new Html5Qrcode("reader");
-  html5QrCode.start(
-    { facingMode: "environment" },
-    {
-      fps: 10,
-      qrbox: 250,
-      formatsToSupport: [Html5QrcodeSupportedFormats.CODE_39]
-    },
-    onScanSuccess
-  )
-  .catch(err => {
-    // ここでエラー内容を表示する
-    console.error(err);
-    alert("カメラの起動に失敗しました: " + err);
+function calculateStats() {
+  const statsBody = document.getElementById('statsBody');
+  statsBody.innerHTML = "";
+
+  const getStats = (list) => {
+    const total = list.length;
+    const paid = list.filter(r => r["支払いステータス"] === "完了").length;
+    const unpaid = total - paid;
+    const rate = total > 0 ? ((unpaid / total) * 100).toFixed(1) + "%" : "0%";
+    return { total, paid, unpaid, rate };
+  };
+
+  // 全体
+  const allS = getStats(roster);
+  appendStatRow(statsBody, "全体", allS, true);
+
+  // 各組
+  const groups = [...new Set(roster.map(r => r["組"]).filter(Boolean))].sort();
+  groups.forEach(g => {
+    const gList = roster.filter(r => r["組"] === g);
+    appendStatRow(statsBody, g + "組", getStats(gList), false);
   });
-});
-function onScanSuccess(code) {
-  document.getElementById("scanResult").innerText = "読み取り: " + code;
+}
 
-  const person = roster.find(r => (r["ID"] || "").toString() == code);
+function appendStatRow(parent, label, s, isAll) {
+  const tr = document.createElement('tr');
+  if(isAll) tr.className = "stat-all";
+  tr.innerHTML = `<td>${label}</td><td>${s.total}</td><td>${s.paid}</td><td>${s.unpaid}</td><td>${s.rate}</td>`;
+  parent.appendChild(tr);
+}
 
-  if (person) {
-    showDialog(
-      person["氏名"] + " さんを支払い済みにしますか？",
-      "#5cb85c"
-    ).then(ok => {
-      if (ok) markPaid(person, "barcode");
-    });
-  } else {
-    alert("名簿に存在しません");
+function updateList() {
+  const search = document.getElementById('kanaSearch').value;
+  const groupFilter = document.getElementById('groupSearch').value;
+  const statusFilter = document.getElementById('statusSearch').value;
+  const container = document.getElementById('candidateList');
+  container.innerHTML = "";
+  let totalAmount = 0;
+
+  roster.forEach(p => {
+    const isPaid = p["支払いステータス"] === "完了";
+    if (isPaid) totalAmount += Number(p["金額"] || 0);
+
+    const matchSearch = !search || (p["氏名"]+(p["ふりがな"]||"")).includes(search);
+    const matchGroup = !groupFilter || String(p["組"]) === groupFilter;
+    const matchStatus = statusFilter === "all" || (statusFilter === "paid" ? isPaid : !isPaid);
+
+    if (matchSearch && matchGroup && matchStatus) {
+      const div = document.createElement('div');
+      div.className = 'list-item' + (isPaid ? " paid" : "");
+      div.innerHTML = `<div class="item-name">${p["組"] ? p["組"]+'組 ' : ''}${p["氏名"]}</div>
+        <button onclick="confirmPay('${p["ID"]}', 'manual')" style="width:auto; padding:15px 30px; min-width: 180px; font-size: 40px;">${isPaid ? '取消' : '支払'}</button>`;
+      container.appendChild(div);
+    }
+  });
+  document.getElementById('totalAmount').innerText = totalAmount.toLocaleString();
+  calculateStats();
+}
+
+function showDialog(msg, isCancelMode = false) {
+  const box = document.getElementById('dialogBox');
+  const btn = document.getElementById('dialogConfirmBtn');
+  box.style.backgroundColor = isCancelMode ? "#fff0f0" : "#f0fff4";
+  btn.style.backgroundColor = isCancelMode ? "#dc3545" : "#28a745";
+  document.getElementById('dialogMessage').innerText = msg;
+  document.getElementById('dialogOverlay').style.display = 'flex';
+  return new Promise(res => { dialogResolver = res; });
+}
+
+function dialogClick(val) {
+  document.getElementById('dialogOverlay').style.display = 'none';
+  dialogResolver(val);
+}
+
+async function confirmPay(id, type) {
+  const p = roster.find(r => String(r["ID"]) === String(id));
+  const isCurrentlyPaid = p["支払いステータス"] === "完了";
+  if (await showDialog(`${p["氏名"]}さん\n${isCurrentlyPaid ? "取消" : "支払"}を確定しますか？`, isCurrentlyPaid)) {
+    if (!isCurrentlyPaid) {
+      p["支払いステータス"] = "完了";
+      p["入力区分"] = type === "manual" ? "手動入力" : "バーコード入力";
+      const now = new Date();
+      p["日付"] = now.toLocaleDateString();
+      p["時刻"] = now.toTimeString().split(' ')[0];
+    } else {
+      p["支払いステータス"] = "";
+      delete p["入力区分"]; delete p["日付"]; delete p["時刻"];
+    }
+    saveAndRefresh();
   }
 }
 
-// 画像から読み取りボタン
-document.getElementById("scanImageButton").addEventListener("click", () => {
-  document.getElementById("barcodeImage").click();
-});
+async function confirmReset() {
+  if (await showDialog("全消去しますか？", true)) { localStorage.clear(); roster = []; location.reload(); }
+}
 
-document.getElementById("barcodeImage").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+async function startScanner() {
+  localStorage.setItem('scannerActive', 'true');
+  if (!html5QrCode) html5QrCode = new Html5Qrcode("reader");
+  const config = { fps: 15, qrbox: { width: 300, height: 200 } };
   try {
-    if (!html5QrCode) html5QrCode = new Html5Qrcode("reader");
-    const result = await html5QrCode.scanFile(file, false);
-    onScanSuccess(result);
-  } catch (err) {
-    alert("画像からバーコードを読み取れませんでした");
+    await html5QrCode.start({ facingMode: "environment" }, config, async (txt) => { await onScanSuccess(txt); });
+  } catch (err) { console.error(err); }
+}
+
+async function stopScanner() {
+  localStorage.setItem('scannerActive', 'false');
+  if (html5QrCode) { try { await html5QrCode.stop(); } catch(e) {} }
+}
+
+async function onScanSuccess(code) {
+  const p = roster.find(r => String(r["ID"]) === String(code));
+  if (p) {
+    await stopScanner();
+    await confirmPay(p["ID"], "barcode");
+    startScanner(); 
+  } else {
+    await stopScanner();
+    await showDialog(`未登録ID: ${code}`, true);
+    startScanner();
   }
-});
-
-// ④ 支払い処理／キャンセル処理
-function markPaid(person, method) {
-  if (person["支払状況"] === "済") {
-    alert(person["氏名"] + " さんは既に支払済みです");
-    return;
-  }
-  person["支払状況"] = "済";
-  const now = new Date().toLocaleString();
-  person["支払日時"] = now;
-
-  logs.push({
-    ID: person["ID"],
-    氏名: person["氏名"],
-    組: person["組"],
-    金額: person["金額"],
-    方法: method,
-    時刻: now
-  });
-
-  totalAmount += Number(person["金額"] || 0);
-  updateTopInfo();
-  filterList();
-  saveState();
 }
 
-function cancelPaid(person) {
-  if (person["支払状況"] !== "済") return;
-
-  person["支払状況"] = "";
-  person["支払日時"] = "";
-
-  logs = logs.filter(l => l.ID !== person["ID"]);
-  totalAmount = logs.reduce((sum, l) => sum + Number(l.金額 || 0), 0);
-  updateTopInfo();
-  filterList();
-  saveState();
-}
-
-// ⑤ トップ情報更新（3桁区切り）
-function updateTopInfo() {
-  document.getElementById("totalAmount").textContent = formatNumber(totalAmount);
-  document.getElementById("lastUpdate").textContent =
-    logs.length ? logs[logs.length - 1].時刻 : "-";
-}
-
-// ⑥ 支払いログをExcelに書き出し
-function exportLog() {
-  if (logs.length === 0) {
-    alert("ログがありません");
-    return;
-  }
-  const ws = XLSX.utils.json_to_sheet(logs);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "ログ");
-  const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-
-  const blob = new Blob([wbout], { type: "application/octet-stream" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "支払いログ.xlsx";
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// ⑦ 更新した名簿をExcelに書き出し
 function exportRoster() {
-  if (roster.length === 0) {
-    alert("名簿がありません");
-    return;
-  }
   const ws = XLSX.utils.json_to_sheet(roster);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "名簿");
-  const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-
-  const blob = new Blob([wbout], { type: "application/octet-stream" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "更新後名簿.xlsx";
-  a.click();
-  URL.revokeObjectURL(url);
+  XLSX.utils.book_append_sheet(wb, ws, "全名簿");
+  XLSX.writeFile(wb, "roster.xlsx");
 }
-
-// ⑧ 各組の一覧を共有（全員も可）
-function sendGroupSummary() {
-  const group = document.getElementById("groupSend").value;
-  if (!group) {
-    alert("組を選択してください");
-    return;
-  }
-
-  let target = roster;
-  let title = "";
-
-  if (group === "__ALL__") {
-    title = "全員の支払状況";
-  } else {
-    target = roster.filter(r => r["組"] == group);
-    title = group + " の支払状況";
-  }
-
-  const list = target
-    .map(r => `${r["氏名"]}：${r["支払状況"] || "未"} 金額:${r["金額"]}`)
-    .join("\n");
-
-  const msg = `${title}\n\n${list}`;
-
-  if (navigator.share) {
-    navigator.share({
-      title: title,
-      text: msg
-    });
-  } else {
-    alert(msg);
-  }
+function exportLogs() {
+  const logs = roster.filter(r => r["支払いステータス"] === "完了");
+  const ws = XLSX.utils.json_to_sheet(logs);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "支払いログ");
+  XLSX.writeFile(wb, "logs.xlsx");
 }
 </script>
-
 </body>
 </html>
